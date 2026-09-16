@@ -1,0 +1,8 @@
+{
+  "name": "Remix ColorGuess",
+  "description": "A fast-paced mobile app to predict color patterns and test your intuition in real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
