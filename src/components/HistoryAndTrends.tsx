@@ -88,12 +88,12 @@ export const HistoryAndTrends: React.FC<HistoryAndTrendsProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {results.slice(0, 10).map((r) => {
+              {results.slice(0, 10).map((r, idx) => {
                 const isDualGreen = r.colors.includes('green') && r.colors.includes('violet');
                 const isDualRed = r.colors.includes('red') && r.colors.includes('violet');
 
                 return (
-                  <tr key={r.period} className="hover:bg-white/5 transition-colors">
+                  <tr key={`${r.period}-${r.timestamp || idx}`} className="hover:bg-white/5 transition-colors">
                     <td className="py-2.5 px-2 font-bold">{r.period}</td>
                     <td className="py-2.5 px-2">
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded-full font-black text-white bg-zinc-800 text-xs shadow-sm">
@@ -140,9 +140,9 @@ export const HistoryAndTrends: React.FC<HistoryAndTrendsProps> = ({
               {isHi ? 'आपने अभी कोई दांव नहीं लगाया है।' : 'No bets placed yet.'}
             </div>
           ) : (
-            userBets.map((b) => (
+            userBets.map((b, idx) => (
               <div
-                key={b.id}
+                key={b.id || `bet-${b.period}-${idx}`}
                 className="p-3 rounded-2xl bg-zinc-900/60 border border-white/10 flex items-center justify-between text-xs"
               >
                 <div>

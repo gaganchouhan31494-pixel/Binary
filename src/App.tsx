@@ -118,92 +118,136 @@ export const App: React.FC = () => {
     }
   };
 
+  // Refs to always access fresh state in the timer interval
+  const countdownRef = useRef(countdown);
+  countdownRef.current = countdown;
+
+  const periodIdRef = useRef(periodId);
+  periodIdRef.current = periodId;
+
+  const gameModeRef = useRef(gameMode);
+  gameModeRef.current = gameMode;
+
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+
+  const userBetsRef = useRef(userBets);
+  userBetsRef.current = userBets;
+
+  const settledPeriodsRef = useRef<Set<string>>(new Set());
+
   // Change Game Mode (Parity 30s, Sapre 1m, Bcone 3m, Emerd 5m)
   const handleSelectGameMode = (mode: GameMode) => {
     setGameMode(mode);
     const newDur = mode === 'parity' ? 30 : mode === 'sapre' ? 60 : mode === 'bcone' ? 180 : 300;
     setDuration(newDur);
     setCountdown(newDur);
-    setPeriodId(generatePeriodId(mode));
+    countdownRef.current = newDur;
+    durationRef.current = newDur;
+    gameModeRef.current = mode;
+    const newPeriod = generatePeriodId(mode);
+    setPeriodId(newPeriod);
+    periodIdRef.current = newPeriod;
   };
 
-  // Sound tick for countdown
-  const countdownRef = useRef(countdown);
-  countdownRef.current = countdown;
+  // Settle the round cleanly and advance to the next period
+  const settleRound = (currentPeriod: string, currentMode: GameMode, currentDur: number) => {
+    if (settledPeriodsRef.current.has(currentPeriod)) {
+      return;
+    }
+    settledPeriodsRef.current.add(currentPeriod);
+
+    // Reveal outcome
+    const newNumber = Math.floor(Math.random() * 10);
+    const outcome = calculateOutcome(newNumber);
+    const newResult: GameResult = {
+      period: currentPeriod,
+      number: newNumber,
+      color: outcome.color,
+      colors: outcome.colors,
+      size: outcome.size,
+      hash: `0x${Math.random().toString(16).slice(2, 10)}${Math.random().toString(16).slice(2, 10)}`,
+      timestamp: Date.now(),
+    };
+
+    // Evaluate user's pending bets for this period
+    let roundWin = 0;
+    let hasBetsInRound = false;
+
+    setUserBets((prevBets) => {
+      return prevBets.map((b) => {
+        if (b.period === currentPeriod && b.status === 'pending') {
+          hasBetsInRound = true;
+          const { won, winAmount } = evaluateBet(b, newResult);
+          if (won) roundWin += winAmount;
+          return {
+            ...b,
+            status: won ? 'won' : 'lost',
+            winAmount,
+          };
+        }
+        return b;
+      });
+    });
+
+    // Check userBetsRef for winning notification and wallet update
+    const pendingBetsForRound = userBetsRef.current.filter(
+      (b) => b.period === currentPeriod && b.status === 'pending'
+    );
+    if (pendingBetsForRound.length > 0) {
+      let winSum = 0;
+      pendingBetsForRound.forEach((b) => {
+        const { won, winAmount } = evaluateBet(b, newResult);
+        if (won) winSum += winAmount;
+      });
+
+      if (winSum > 0) {
+        setWallet((w) => ({
+          ...w,
+          balance: w.balance + winSum,
+          totalWon: w.totalWon + winSum,
+        }));
+        sound.playWin();
+      } else {
+        sound.playLoss();
+      }
+
+      setLatestResultModal(newResult);
+    }
+
+    // Add to results history safely ensuring no duplicates by period
+    setResults((prev) => {
+      if (prev.some((r) => r.period === newResult.period)) {
+        return prev;
+      }
+      return [newResult, ...prev.slice(0, 49)];
+    });
+
+    // Start next period
+    const nextPeriod = generatePeriodId(currentMode, Date.now() + 1000);
+    setPeriodId(nextPeriod);
+    periodIdRef.current = nextPeriod;
+    setCountdown(currentDur);
+    countdownRef.current = currentDur;
+  };
 
   // Countdown timer clock loop
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          // Time expired! Reveal new outcome
-          const newNumber = Math.floor(Math.random() * 10);
-          const outcome = calculateOutcome(newNumber);
-          const newResult: GameResult = {
-            period: periodId,
-            number: newNumber,
-            color: outcome.color,
-            colors: outcome.colors,
-            size: outcome.size,
-            hash: `0x${Math.random().toString(16).slice(2, 10)}${Math.random().toString(16).slice(2, 10)}`,
-            timestamp: Date.now(),
-          };
-
-          // Evaluate user's pending bets for this period
-          let roundWin = 0;
-          let hasBetsInRound = false;
-
-          setUserBets((prevBets) => {
-            return prevBets.map((b) => {
-              if (b.period === periodId && b.status === 'pending') {
-                hasBetsInRound = true;
-                const { won, winAmount } = evaluateBet(b, newResult);
-                if (won) roundWin += winAmount;
-                return {
-                  ...b,
-                  status: won ? 'won' : 'lost',
-                  winAmount,
-                };
-              }
-              return b;
-            });
-          });
-
-          // Update wallet if user won
-          if (roundWin > 0) {
-            setWallet((w) => ({
-              ...w,
-              balance: w.balance + roundWin,
-              totalWon: w.totalWon + roundWin,
-            }));
-            sound.playWin();
-          } else if (hasBetsInRound) {
-            sound.playLoss();
-          }
-
-          // Show result modal if user participated in this round
-          if (hasBetsInRound) {
-            setLatestResultModal(newResult);
-          }
-
-          // Add to results history
-          setResults((prev) => [newResult, ...prev.slice(0, 49)]);
-
-          // Start next period
-          setPeriodId(generatePeriodId(gameMode, Date.now() + 1000));
-          return duration;
-        }
-
-        if (prev <= 6 && prev > 1) {
+      const current = countdownRef.current;
+      if (current <= 1) {
+        settleRound(periodIdRef.current, gameModeRef.current, durationRef.current);
+      } else {
+        if (current <= 6 && current > 1) {
           sound.playTick();
         }
-
-        return prev - 1;
-      });
+        setCountdown(current - 1);
+        countdownRef.current = current - 1;
+      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [periodId, gameMode, duration]);
+  }, []);
 
   // Open Bet Placement Modal
   const handleOpenBet = (type: BetTargetType, value: string, multiplier: number) => {
@@ -227,7 +271,7 @@ export const App: React.FC = () => {
     }));
 
     const newBet: UserBet = {
-      id: `BET-${Date.now().toString().slice(-6)}`,
+      id: `BET-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       period: periodId,
       gameMode,
       targetType: activeBetSelection.type,

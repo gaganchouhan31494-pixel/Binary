@@ -8,12 +8,14 @@ export function formatCurrency(amount: number): string {
 }
 
 export function generatePeriodId(mode: GameMode, timestamp: number = Date.now()): string {
-  const dateStr = new Date(timestamp)
+  const dateObj = new Date(timestamp);
+  const dateStr = dateObj
     .toISOString()
     .slice(0, 10)
     .replace(/-/g, '');
+  const dayStart = new Date(timestamp).setHours(0, 0, 0, 0);
   const minutesOfDay = Math.floor(
-    (timestamp - new Date().setHours(0, 0, 0, 0)) / (mode === 'parity' ? 30000 : 60000)
+    (timestamp - dayStart) / (mode === 'parity' ? 30000 : 60000)
   );
   const periodSeq = String(Math.max(1, minutesOfDay)).padStart(4, '0');
   const prefixMap: Record<GameMode, string> = {
